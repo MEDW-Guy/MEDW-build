@@ -1,5 +1,5 @@
 -- ============================================
--- BUILD — client-side construction tool (fixed)
+-- BUILD — client-side construction tool (Studio-style)
 -- ============================================
 
 local UIS=game:GetService("UserInputService")
@@ -30,7 +30,6 @@ local State={
     Snap=true,
 }
 
--- FIX: не исключаем Parts из рейкаста!
 local Params=RaycastParams.new()
 Params.FilterType=Enum.RaycastFilterType.Exclude
 local function refreshFilter()
@@ -67,12 +66,11 @@ local SelBox=Instance.new("SelectionBox")
 SelBox.LineThickness=0.15
 SelBox.Color3=Color3.fromRGB(122,140,255)
 SelBox.SurfaceTransparency=1
-SelBox.SurfaceColor3=Color3.fromRGB(255,255,255)
 SelBox.Adornee=nil
 SelBox.Parent=CoreGui
 
 -- ==========================================
--- Handles
+-- Handles (Studio-style arrows)
 -- ==========================================
 
 local handles={}
@@ -84,56 +82,114 @@ local function clearHandles()
     handles={}
 end
 
-local HANDLE_SIZE=0.75
+local AXIS_DATA={
+    {axis=Vector3.new(1,0,0), color=Color3.fromRGB(235,70,70), letter="X+"},
+    {axis=Vector3.new(-1,0,0),color=Color3.fromRGB(235,70,70), letter="X-"},
+    {axis=Vector3.new(0,1,0), color=Color3.fromRGB(70,220,90), letter="Y+"},
+    {axis=Vector3.new(0,-1,0),color=Color3.fromRGB(70,220,90), letter="Y-"},
+    {axis=Vector3.new(0,0,1), color=Color3.fromRGB(70,130,240),letter="Z+"},
+    {axis=Vector3.new(0,0,-1),color=Color3.fromRGB(70,130,240),letter="Z-"},
+}
+
+local function createHandle(src,d)
+    local ball=Instance.new("Part")
+    ball.Name="RSH_"..d.letter
+    ball.Shape=Enum.PartType.Ball
+    ball.Size=Vector3.new(0.6,0.6,0.6)
+    ball.Anchored=true
+    ball.CanCollide=false
+    ball.CanQuery=true
+    ball.Material=Enum.Material.Neon
+    ball.Color=d.color
+    ball.Transparency=0
+    ball.Parent=HandlesFolder
+
+    local bb=Instance.new("BillboardGui")
+    bb.Name="RSH_BB"
+    bb.AlwaysOnTop=true
+    bb.Size=UDim2.fromOffset(40,40)
+    bb.LightInfluence=0
+    bb.Parent=ball
+
+    local circle=Instance.new("Frame")
+    circle.Size=UDim2.fromScale(1,1)
+    circle.BackgroundColor3=d.color
+    circle.BackgroundTransparency=0.15
+    circle.BorderSizePixel=0
+    circle.Parent=bb
+    Instance.new("UICorner",circle).CornerRadius=UDim.new(1,0)
+    local stroke=Instance.new("UIStroke")
+    stroke.Color=Color3.new(1,1,1)
+    stroke.Thickness=1.5
+    stroke.Transparency=0.4
+    stroke.Parent=circle
+
+    local label=Instance.new("TextLabel")
+    label.Size=UDim2.fromScale(1,1)
+    label.BackgroundTransparency=1
+    label.Text=d.letter
+    label.TextColor3=Color3.fromRGB(255,255,255)
+    label.Font=Enum.Font.GothamBold
+    label.TextScaled=true
+    label.Parent=circle
+
+    -- shaft (thin, from face to ball)
+    local shaft=Instance.new("Part")
+    shaft.Name="RSH_shaft"
+    shaft.Anchored=true
+    shaft.CanCollide=false
+    shaft.CanQuery=false
+    shaft.Material=Enum.Material.Neon
+    shaft.Color=d.color
+    shaft.Transparency=0.3
+    shaft.Size=Vector3.new(0.15,0.15,0.15)
+    shaft.Parent=HandlesFolder
+
+    table.insert(handles,{
+        part=ball,
+        bb=bb,
+        label=label,
+        shaft=shaft,
+        axis=d.axis,
+        src=src,
+    })
+end
 
 local function buildHandles(src)
     clearHandles()
     if not src or not src.Parent then return end
-    local s=src.Size
-    local hs=HANDLE_SIZE
-    local axes={
-        {Vector3.new(1,0,0),Color3.fromRGB(235,80,80)},
-        {Vector3.new(-1,0,0),Color3.fromRGB(235,80,80)},
-        {Vector3.new(0,1,0),Color3.fromRGB(70,220,90)},
-        {Vector3.new(0,-1,0),Color3.fromRGB(70,220,90)},
-        {Vector3.new(0,0,1),Color3.fromRGB(70,130,240)},
-        {Vector3.new(0,0,-1),Color3.fromRGB(70,130,240)},
-    }
-    for i,d in ipairs(axes) do
-        local axis=d[1]
-        local h=Instance.new("Part")
-        h.Shape=Enum.PartType.Ball
-        h.Size=Vector3.new(hs,hs,hs)
-        h.Anchored=true
-        h.CanCollide=false
-        h.CanQuery=true
-        h.Material=Enum.Material.Neon
-        h.Color=d[2]
-        h.Transparency=0
-        h.Name="RSH_"..i
-        local offset=Vector3.new(
-            axis.X*(s.X/2),
-            axis.Y*(s.Y/2),
-            axis.Z*(s.Z/2)
-        )
-        h.CFrame=src.CFrame*CFrame.new(offset)
-        h.Parent=HandlesFolder
-        table.insert(handles,{part=h,axis=axis,src=src})
+    for _,d in ipairs(AXIS_DATA) do
+        createHandle(src,d)
     end
 end
 
 local function updateHandlePositions(src)
     if not src or not src.Parent then return end
-    local s=src.Size
-    local hs=HANDLE_SIZE
+    local camPos=Camera.CFrame.Position
+    local dist=(camPos-src.Position).Magnitude
+
+    -- scaling with distance
+    local ballSize=math.clamp(dist*0.02,0.4,2.0)
+    local bbSize=math.clamp(dist*2.5,26,90)
+
     for _,h in ipairs(handles) do
         local axis=h.axis
-        local offset=Vector3.new(
-            axis.X*(s.X/2),
-            axis.Y*(s.Y/2),
-            axis.Z*(s.Z/2)
-        )
-        h.part.CFrame=src.CFrame*CFrame.new(offset)
+        local worldFace=(src.CFrame*CFrame.new(axis*(src.Size*0.5))).Position
+        local axisWorld=src.CFrame:VectorToWorldSpace(axis)
+
+        -- push handle outward a bit beyond face
+        local outward=math.clamp(src.Size.Magnitude*0.08,0.6,2.0)
+        local ballPos=worldFace+axisWorld*outward
+
+        h.part.Size=Vector3.new(ballSize,ballSize,ballSize)
+        h.part.CFrame=CFrame.new(ballPos)
+        h.bb.Size=UDim2.fromOffset(bbSize,bbSize)
+
+        -- shaft from face to ball
+        local mid=worldFace+axisWorld*(outward/2)
+        local len=outward
+        h.shaft.Size=Vector3.new(ballSize*0.35,ballSize*0.35,len)
+        h.shaft.CFrame=CFrame.lookAt(mid,mid-axisWorld)
     end
 end
 
@@ -232,7 +288,6 @@ local function handleClick(x,y)
             select(c)
         end
     end
-    -- mode "move" and "resize": clicks don't change selection
 end
 
 local function startDrag(x,y)
@@ -279,7 +334,6 @@ local function updateDrag(x,y)
                 local hit=ray.Origin+ray.Direction*t
                 local np=dragState.startPos+(hit-dragState.startHit)
                 part.Position=Vector3.new(snap(np.X),snap(np.Y),snap(np.Z))
-                if State.Mode=="resize" then updateHandlePositions(part) end
             end
         end
     elseif resizeDrag then
@@ -302,8 +356,7 @@ local function updateDrag(x,y)
         if math.abs(denom)>1e-6 then
             local tOnAxis=(a1*f1-b1*e1)/denom
             local closest=p2+d2*tOnAxis
-            local diffAxis=closest-p2
-            local newLength=diffAxis:Dot(d2)
+            local newLength=(closest-p2):Dot(d2)
             newLength=math.max(0.05,newLength)
             if newLength>500 then newLength=500 end
             newLength=snap(newLength)
@@ -318,7 +371,6 @@ local function updateDrag(x,y)
             local rotOnly=src.CFrame - src.CFrame.Position
             local newCenter=p2+d2*(newLength/2)
             src.CFrame=CFrame.new(newCenter)*rotOnly
-            updateHandlePositions(src)
         end
     end
 end
@@ -406,7 +458,7 @@ SUB.Parent=HD
 local HideBtn=Instance.new("TextButton")
 HideBtn.Size=UDim2.new(0,22,0,22)
 HideBtn.Position=UDim2.new(1,-32,0.5,-11)
-HideBtn.BackgroundColor3=Color3.fromRGB(26,27,32)
+HideBtn.BackgroundColor3=BTN_BG
 HideBtn.BorderSizePixel=0
 HideBtn.Text="−"
 HideBtn.TextColor3=TXT2
@@ -497,7 +549,7 @@ local snapBtn=toolBtn("Snap: 1",12,82,110,24,function()
     snapBtn.Text="Snap: "..tostring(State.Grid)
 end)
 
--- SHAPE panel
+-- SHAPE
 ShapePanel=Instance.new("Frame")
 ShapePanel.Size=UDim2.new(1,0,0,64)
 ShapePanel.Position=UDim2.new(0,0,0,114)
@@ -812,13 +864,13 @@ local function mkAxisBox(parent,x,label,init,cb)
 end
 
 propRefs.posX=mkAxisBox(posRow,110,"X",0,function(v)
-    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(v,p.Y,p.Z) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(v,p.Y,p.Z) end
 end)
 propRefs.posY=mkAxisBox(posRow,160,"Y",0,function(v)
-    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(p.X,v,p.Z) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(p.X,v,p.Z) end
 end)
 propRefs.posZ=mkAxisBox(posRow,210,"Z",0,function(v)
-    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(p.X,p.Y,v) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local p=State.Selected.Position State.Selected.Position=Vector3.new(p.X,p.Y,v) end
 end)
 
 local sizeRow=Instance.new("Frame")
@@ -838,13 +890,13 @@ sizeL.TextYAlignment=Enum.TextYAlignment.Center
 sizeL.Parent=sizeRow
 
 propRefs.szX=mkAxisBox(sizeRow,110,"X",0,function(v)
-    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(math.max(0.05,v),s.Y,s.Z) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(math.max(0.05,v),s.Y,s.Z) end
 end)
 propRefs.szY=mkAxisBox(sizeRow,160,"Y",0,function(v)
-    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(s.X,math.max(0.05,v),s.Z) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(s.X,math.max(0.05,v),s.Z) end
 end)
 propRefs.szZ=mkAxisBox(sizeRow,210,"Z",0,function(v)
-    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(s.X,s.Y,math.max(0.05,v)) if State.Mode=="resize" then updateHandlePositions(State.Selected) end end
+    if State.Selected then local s=State.Selected.Size State.Selected.Size=Vector3.new(s.X,s.Y,math.max(0.05,v)) end
 end)
 
 local rotRow=propRow(288,"Rotate Y")
@@ -883,7 +935,6 @@ do
         if State.Selected then
             local p=State.Selected.Position
             State.Selected.CFrame=CFrame.new(p)*CFrame.Angles(0,math.rad(v),0)
-            if State.Mode=="resize" then updateHandlePositions(State.Selected) end
         end
     end
     rotKnob.InputBegan:Connect(function(inp)
@@ -1000,7 +1051,6 @@ UIS.InputBegan:Connect(function(inp,gp)
         if overMenu() then return end
         if UIS:GetFocusedTextBox() then return end
         local mp=UIS:GetMouseLocation()
-        -- resize handles take priority
         if State.Mode=="resize" then
             local hres=rayHandle(mp.X,mp.Y)
             if hres and hres.Instance then
@@ -1079,9 +1129,13 @@ RS.RenderStepped:Connect(function()
     elseif State.Mode=="resize" then FMode.TextColor3=Color3.fromRGB(230,180,90)
     else FMode.TextColor3=TXT3 end
 
-    -- Если выделенная часть удалена — снять выделение и ручки
     if State.Selected and not State.Selected.Parent then
         deselect()
+    end
+
+    -- live-update resize handles (position + scale with camera distance)
+    if State.Mode=="resize" and State.Selected and #handles>0 then
+        updateHandlePositions(State.Selected)
     end
 
     if State.Selected and tick()-(State._lastSync or 0)>0.15 then
@@ -1104,4 +1158,4 @@ refreshTools()
 refreshShapes()
 _G.BuildRefreshProps()
 
-print("BUILD fixed · B to toggle")
+print("BUILD Studio-style loaded · B to toggle")
